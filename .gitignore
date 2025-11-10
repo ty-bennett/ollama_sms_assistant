@@ -1,3 +1,4 @@
 *.env
 *.mod
+weather_api_key
 
