@@ -52,16 +52,16 @@ func main() {
 
 	daily_feels_like := raw_json.Get("daily", "0", "feels_like", "day").GetFloat64()
 	daily_humidity := raw_json.Get("daily", "0", "humidity").GetFloat64()
+	daily_summary := raw_json.Get("daily", "0", "summary").GetStringBytes()
 	// TODO:
 	//	weather_summary := raw_json.Get("daily", "0", "summary").GetStringBytes()
 	//  humidity := raw_json.Get("current")
 
-	var m map[string]string
-	m = make(map[string]string)
+	m := make(map[string]string)
 
 	m["daily_feels_like"] = strconv.FormatFloat(daily_feels_like, 'f', -1, 64)
-	m["daily_feels_like"] = strconv.FormatFloat(daily_humidity, 'f', -1, 64)
-	m["daily_feels_like"] = strconv.FormatFloat(daily_feels_like, 'f', -1, 64)
+	m["daily_humidity"] = strconv.FormatFloat(daily_humidity, 'f', -1, 64)
+	m["daily_summary"] = string(daily_summary)
 	m["daily_feels_like"] = strconv.FormatFloat(daily_feels_like, 'f', -1, 64)
 
 	var ai_response strings.Builder
