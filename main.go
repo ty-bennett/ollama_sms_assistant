@@ -53,22 +53,23 @@ func main() {
 	daily_feels_like := raw_json.Get("daily", "0", "feels_like", "day").GetFloat64()
 	daily_humidity := raw_json.Get("daily", "0", "humidity").GetFloat64()
 	daily_summary := raw_json.Get("daily", "0", "summary").GetStringBytes()
-	// TODO:
-	//	weather_summary := raw_json.Get("daily", "0", "summary").GetStringBytes()
-	//  humidity := raw_json.Get("current")
+	current_humidity := raw_json.Get("current", "humidity").GetFloat64()
 
 	m := make(map[string]string)
 
 	m["daily_feels_like"] = strconv.FormatFloat(daily_feels_like, 'f', -1, 64)
 	m["daily_humidity"] = strconv.FormatFloat(daily_humidity, 'f', -1, 64)
 	m["daily_summary"] = string(daily_summary)
-	m["daily_feels_like"] = strconv.FormatFloat(daily_feels_like, 'f', -1, 64)
+	m["current_humidity"] = strconv.FormatFloat(current_humidity, 'f', -1, 64)
 
-	var ai_response strings.Builder
-	ai_response.WriteString("Here is the daily weather forecase for Columbia, SC:\n")
-	ai_response.WriteString("Daily feels like temp: ")
-	ai_response.WriteString(m["daily_feels_like"] + "\n")
-	ai_response.WriteString("Daily high temp: ")
-	ai_response.WriteString(m["daily_humidity"] + "\n")
+	// string builder to build the prompt
+	var ai_prompt strings.Builder
+	ai_prompt.WriteString("Here is the daily weather forecast for Columbia, SC:\n")
+	ai_prompt.WriteString("Daily summary: " + m["daily_humidity"] + "\n")
+	ai_prompt.WriteString("Daily Feels Like: " + m["daily_feels_like"] + "\n")
+	ai_prompt.WriteString("Daily Humidity: " + m["daily_humidity"] + "%\n")
+	ai_prompt.WriteString("Current humidity " + m["current_humidity"] + "\n")
+
+	fmt.Print(ai_prompt.String())
 
 }
