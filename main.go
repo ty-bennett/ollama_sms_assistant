@@ -49,7 +49,8 @@ func main() {
 	raw_json, err := p.Parse(string(body))
 	LogErr(err)
 
-	daily_feels_like := raw_json.Get("daily", "0", "feels_like", "day").GetFloat64()
+	daily_max := raw_json.Get("daily", "0", "temp", "max").GetFloat64()
+	daily_low := raw_json.Get("daily", "0", "temp", "min").GetFloat64()
 	daily_humidity := raw_json.Get("daily", "0", "humidity").GetFloat64()
 	daily_summary := raw_json.Get("daily", "0", "summary").GetStringBytes()
 	current_humidity := raw_json.Get("current", "humidity").GetFloat64()
@@ -57,7 +58,8 @@ func main() {
 
 	m := make(map[string]string)
 
-	m["daily_feels_like"] = strconv.FormatFloat(daily_feels_like, 'f', -1, 64)
+	m["daily_max"] = strconv.FormatFloat(daily_max, 'f', -1, 64)
+	m["daily_low"] = strconv.FormatFloat(daily_low, 'f', -1, 64)
 	m["daily_humidity"] = strconv.FormatFloat(daily_humidity, 'f', -1, 64)
 	m["daily_summary"] = string(daily_summary)
 	m["current_humidity"] = strconv.FormatFloat(current_humidity, 'f', -1, 64)
@@ -65,13 +67,26 @@ func main() {
 
 	// string builder to build the prompt
 	var ai_prompt strings.Builder
+	// building prompt
 	ai_prompt.WriteString("Here is the daily weather forecast for Columbia, SC:\n")
-	ai_prompt.WriteString("Daily summary: " + m["daily_humidity"] + "\n")
-	ai_prompt.WriteString("Daily Feels Like: " + m["daily_feels_like"] + "\n")
+	ai_prompt.WriteString("Daily summary: " + m["daily_summary"] + "\n")
+	ai_prompt.WriteString("Daily High: " + m["daily_max"] + "\u00B0F\n")
+	ai_prompt.WriteString("Daily Low: " + m["daily_low"] + "\u00B0F\n")
 	ai_prompt.WriteString("Daily Humidity: " + m["daily_humidity"] + "%\n")
-	ai_prompt.WriteString("Current humidity " + m["current_humidity"] + "\n")
-	ai_prompt.WriteString("Current feels like: " + m["current_feels_like"] + "\n")
+	ai_prompt.WriteString("Current humidity " + m["current_humidity"] + "%\n")
+	ai_prompt.WriteString("Current feels like: " + m["current_feels_like"] + "\u00B0F\n")
 
-	fmt.Print(ai_prompt.String())
+	// weather prompt all built, time to get calendar events
+
+	// TODO: get credentials set up with google gmail API
+	// get top 5 emails from the day
+	//
+	//
+	//TODO: 2: get credentials setup for google calendar api
+	// get all events from today and list times
+	// have ai figure out if i have anything important like exams or things other than school (based on response I feed it)
+	//
+	// FUTURE: setup NLP to process calendar changes on my phone
+	// check gemini chats
 
 }
