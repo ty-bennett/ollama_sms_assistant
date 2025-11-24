@@ -2,15 +2,14 @@ package main
 
 import (
 	"fmt"
+	"github.com/joho/godotenv"
+	"github.com/valyala/fastjson"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
-
-	"github.com/joho/godotenv"
-	"github.com/valyala/fastjson"
 )
 
 func LogErr(e error) {
@@ -54,6 +53,7 @@ func main() {
 	daily_humidity := raw_json.Get("daily", "0", "humidity").GetFloat64()
 	daily_summary := raw_json.Get("daily", "0", "summary").GetStringBytes()
 	current_humidity := raw_json.Get("current", "humidity").GetFloat64()
+	current_feels_like := raw_json.Get("current", "feels_like").GetFloat64()
 
 	m := make(map[string]string)
 
@@ -61,6 +61,7 @@ func main() {
 	m["daily_humidity"] = strconv.FormatFloat(daily_humidity, 'f', -1, 64)
 	m["daily_summary"] = string(daily_summary)
 	m["current_humidity"] = strconv.FormatFloat(current_humidity, 'f', -1, 64)
+	m["current_feels_like"] = strconv.FormatFloat(current_feels_like, 'f', -1, 64)
 
 	// string builder to build the prompt
 	var ai_prompt strings.Builder
@@ -69,6 +70,7 @@ func main() {
 	ai_prompt.WriteString("Daily Feels Like: " + m["daily_feels_like"] + "\n")
 	ai_prompt.WriteString("Daily Humidity: " + m["daily_humidity"] + "%\n")
 	ai_prompt.WriteString("Current humidity " + m["current_humidity"] + "\n")
+	ai_prompt.WriteString("Current feels like: " + m["current_feels_like"] + "\n")
 
 	fmt.Print(ai_prompt.String())
 
