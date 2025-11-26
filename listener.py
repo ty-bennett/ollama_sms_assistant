@@ -2,11 +2,19 @@
 # creds are stored in a .env file 
 
 import speech_recognition as sr
+from pocketsphinx import LiveSpeech
+
+
+speech = LiveSpeech()
+
+for phrase in speech:
+    print(phrase)
 
 r = sr.Recognizer()
 with sr.Microphone() as source:
-    print("Say something!")
+    print("hello")
     audio = r.listen(source)
+    r.adjust_for_ambient_noise(source)
     # recognize speech using Sphinx
     try:
         print("Sphinx thinks you said " + r.recognize_sphinx(audio))
