@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/joho/godotenv"
-	"github.com/valyala/fastjson"
 	"io"
 	"log"
 	"net/http"
@@ -11,13 +9,32 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/joho/godotenv"
+	"github.com/valyala/fastjson"
+
 	"context"
 	"encoding/json"
+
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
 )
+
+// email struct to easily read content later for ai prompt
+type Email struct {
+	Subject string
+	Sender  string
+	Snippet string
+	Date    string
+}
+
+type CalendarEvent struct {
+	Title    string
+	Date     string
+	Time     string
+	Location string
+}
 
 func LogErr(e error) {
 	if e != nil {
@@ -93,6 +110,55 @@ func saveToken(path string, token *oauth2.Token) {
 	if err != nil {
 		LogErr(err)
 	}
+}
+
+func GetRecentEmails(srv *gmail.Service, limit int64) ([]Email, error) {
+	// set list of emails (using struct)
+	var emails []Email
+	//set user as me (tybennett)
+	user := "me"
+	// get List of emails (returns Ids of emails so i can use them later)
+	r, err := srv.Users.Messages.List(user).LabelIds("INBOX").MaxResults(limit).Do()
+	if err != nil {
+		return nil, fmt.Errorf("unable to retrieve messages: %v", err)
+	}
+	// null check
+	if len(r.Messages) == 0 {
+		fmt.Println("No messages found.")
+		return emails, nil
+	}
+
+	for _, m := range r.Messages {
+		msg, err := srv.Users.Messages.Get(user, m.Id).Format("full").Do()
+		if err != nil {
+			log.Printf("Could not fetch message %v: %v", m.Id, err)
+			continue
+		}
+
+		// Extract Headers (Subject, From)
+		subject := ""
+		sender := ""
+		date := ""
+
+		for _, h := range msg.Payload.Headers {
+			switch h.Name {
+			case "Subject":
+				subject = h.Value
+			case "From":
+				sender = h.Value
+			case "Date":
+				date = h.Value
+			}
+		}
+		emails = append(emails, Email{
+			Subject: subject,
+			Sender:  sender,
+			Snippet: msg.Snippet, // Google automatically generates a summary snippet
+			Date:    date,
+		})
+	}
+
+	return emails, nil
 }
 
 func main() {
@@ -175,30 +241,27 @@ func main() {
 		log.Fatalf("Unable to retrieve Gmail client: %v", err)
 	}
 
-	user := "me"
-	r, err := srv.Users.Labels.List(user).Do()
+	// function call to get messages
+	// get top 10 latest emails
+	fmt.Println("Fetching latest emails...")
+	list_of_emails, err := GetRecentEmails(srv, 10)
 	if err != nil {
-		log.Fatalf("Unable to retrieve labels: %v", err)
-	}
-	if len(r.Labels) == 0 {
-		fmt.Println("No labels found.")
-		return
-	}
-	fmt.Println("Labels:")
-	for _, l := range r.Labels {
-		fmt.Printf("- %s\n", l.Name)
+		LogErr(err)
 	}
 
-	// weather prompt all built, time to get calendar events
+	ai_prompt.WriteString("\n--- Recent Emails ---\n")
+	for _, e := range list_of_emails {
+		ai_prompt.WriteString(fmt.Sprintf("From: %s\nSubject: %s\nSnippet: %s\n\n", e.Sender, e.Subject, e.Snippet))
+	}
 
-	// TODO: get credentials set up with google gmail API
-	// get top 5 emails from the day
-
-	//TODO: 2: get credentials setup for google calendar api
+	//TODO: get credentials setup for google calendar api
 	// get all events from today and list times
+
+	// call calendar func
+
 	// have ai figure out if i have anything important like exams or things other than school (based on response I feed it)
-	//
+
 	// FUTURE: setup NLP to process calendar changes on my phone
 	// check gemini chats
-
+	// will have to do this using python for ease of use
 }
