@@ -95,7 +95,7 @@ func saveToken(path string, token *oauth2.Token) {
 	}
 }
 
-// func main() {
+func main() {
 
 	// load env variable for API key
 	err := godotenv.Load()
@@ -188,6 +188,7 @@ func saveToken(path string, token *oauth2.Token) {
 	for _, l := range r.Labels {
 		fmt.Printf("- %s\n", l.Name)
 	}
+
 	// weather prompt all built, time to get calendar events
 
 	// TODO: get credentials set up with google gmail API
