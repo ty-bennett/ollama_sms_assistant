@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/valyala/fastjson"
@@ -17,6 +18,7 @@ import (
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
 )
@@ -78,15 +80,9 @@ func getTokenFromWeb(config *oauth2.Config) *oauth2.Token {
 func tokenFromFile(file string) (*oauth2.Token, error) {
 	f, err := os.Open(file)
 	if err != nil {
-		LogErr(err)
 		return nil, err
 	}
-	defer func() {
-		err := f.Close()
-		if err != nil {
-			LogErr(err)
-		}
-	}()
+	defer f.Close()
 
 	tok := &oauth2.Token{}
 	err = json.NewDecoder(f).Decode(tok)
@@ -161,6 +157,36 @@ func GetRecentEmails(srv *gmail.Service, limit int64) ([]Email, error) {
 	return emails, nil
 }
 
+func GetCalendarEvents(srv *calendar.Service) ([]CalendarEvent, error) {
+	var calendar_events_list []CalendarEvent
+
+	t := time.Now().Format(time.RFC3339)
+
+	events, err := srv.Events.List("primary").ShowDeleted(false).
+		SingleEvents(true).TimeMin(t).MaxResults(10).OrderBy("startTime").Do()
+
+	if err != nil {
+		log.Fatalf("Unable to retrieve next ten of the user's events: %v", err)
+		return calendar_events_list, err
+	}
+
+	fmt.Println("Upcoming events:")
+	if len(events.Items) == 0 {
+		fmt.Println("No upcoming events found.")
+		log.Fatal("No events found")
+		return calendar_events_list, err
+	} else {
+		for _, item := range events.Items {
+			date := item.Start.DateTime
+			if date == "" {
+				date = item.Start.Date
+			}
+			fmt.Printf("%v (%v)\n", item.Summary, date)
+		}
+	}
+	return calendar_events_list, nil
+}
+
 func main() {
 
 	// load env variable for API key
@@ -230,13 +256,14 @@ func main() {
 	}
 
 	// If modifying these scopes, delete your previously saved token.json.
-	config, err := google.ConfigFromJSON(b, gmail.GmailReadonlyScope)
+	config, err := google.ConfigFromJSON(b, gmail.GmailReadonlyScope, calendar.CalendarReadonlyScope)
 	if err != nil {
 		log.Fatalf("Unable to parse client secret file to config: %v", err)
 	}
 	client := getClient(config)
 
 	srv, err := gmail.NewService(ctx, option.WithHTTPClient(client))
+	calendar_srv, err := calendar.NewService(ctx, option.WithHTTPClient(client))
 	if err != nil {
 		log.Fatalf("Unable to retrieve Gmail client: %v", err)
 	}
@@ -253,6 +280,19 @@ func main() {
 	for _, e := range list_of_emails {
 		ai_prompt.WriteString(fmt.Sprintf("From: %s\nSubject: %s\nSnippet: %s\n\n", e.Sender, e.Subject, e.Snippet))
 	}
+
+	fmt.Println("Fetching calendar events...")
+	list_of_events, err := GetCalendarEvents(calendar_srv)
+
+	if err != nil {
+		LogErr(err)
+	}
+
+	for _, e := range list_of_events {
+		ai_prompt.WriteString(fmt.Sprintf("Title: %s\nDate: %s\nTime: %s\nLocation: %s\n", e.Title, e.Date, e.Time, e.Location))
+	}
+
+	fmt.Println(ai_prompt.String())
 
 	//TODO: get credentials setup for google calendar api
 	// get all events from today and list times
