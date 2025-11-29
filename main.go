@@ -24,6 +24,7 @@ import (
 )
 
 // email struct to easily read content later for ai prompt
+
 type Email struct {
 	Subject string
 	Sender  string
@@ -82,7 +83,9 @@ func tokenFromFile(file string) (*oauth2.Token, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	tok := &oauth2.Token{}
 	err = json.NewDecoder(f).Decode(tok)
@@ -97,14 +100,11 @@ func saveToken(path string, token *oauth2.Token) {
 		log.Fatalf("Unable to cache oauth token: %v", err)
 	}
 	defer func() {
-		err := f.Close()
-		if err != nil {
-			LogErr(err)
-		}
+		_ = f.Close()
 	}()
 	err = json.NewEncoder(f).Encode(token)
 	if err != nil {
-		LogErr(err)
+		log.Fatal(err)
 	}
 }
 
@@ -159,29 +159,50 @@ func GetRecentEmails(srv *gmail.Service, limit int64) ([]Email, error) {
 
 func GetCalendarEvents(srv *calendar.Service) ([]CalendarEvent, error) {
 	var calendar_events_list []CalendarEvent
+	// 1. Calculate the Start and End of "Today"
+	now := time.Now()
+	// Start of day: 00:00:00
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Format(time.RFC3339)
+	// End of day: 23:59:59
+	endOfDay := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location()).Format(time.RFC3339)
 
-	t := time.Now().Format(time.RFC3339)
-
-	events, err := srv.Events.List("primary").ShowDeleted(false).
-		SingleEvents(true).TimeMin(t).MaxResults(10).OrderBy("startTime").Do()
+	calendar_list, err := srv.CalendarList.List().Do()
 
 	if err != nil {
-		log.Fatalf("Unable to retrieve next ten of the user's events: %v", err)
-		return calendar_events_list, err
+		return nil, fmt.Errorf("unable to retrieve calendar list: %v", err)
 	}
 
-	fmt.Println("Upcoming events:")
-	if len(events.Items) == 0 {
-		fmt.Println("No upcoming events found.")
-		log.Fatal("No events found")
-		return calendar_events_list, err
-	} else {
+	for _, cal := range calendar_list.Items {
+
+		events, err := srv.Events.List(cal.Id).ShowDeleted(false).SingleEvents(true).TimeMin(startOfDay).TimeMax(endOfDay).OrderBy("startTime").Do()
+		if cal.Summary == "SCHOOL" {
+			continue
+		}
+		if err != nil {
+			log.Printf("Could not fetch events for calendar %s: %v", cal.Summary, err)
+			continue
+		}
+
 		for _, item := range events.Items {
 			date := item.Start.DateTime
+			timeStr := ""
+
 			if date == "" {
 				date = item.Start.Date
+				timeStr = "All Day"
+			} else {
+				// Parse the RFC3339 time to make it readable (e.g. "15:04")
+				t, _ := time.Parse(time.RFC3339, date)
+				timeStr = t.Format("3:04 PM") // Format as "3:00 PM"
+				date = t.Format("2006-01-02") // Just the date part
 			}
-			fmt.Printf("%v (%v)\n", item.Summary, date)
+			title := fmt.Sprintf("[%s] %s", cal.Summary, item.Summary)
+			calendar_events_list = append(calendar_events_list, CalendarEvent{
+				Title:    title,
+				Date:     date,
+				Time:     timeStr,
+				Location: item.Location,
+			})
 		}
 	}
 	return calendar_events_list, nil
@@ -218,6 +239,8 @@ func main() {
 	raw_json, err := p.Parse(string(body))
 	LogErr(err)
 
+	fmt.Println("Fetching Weather...")
+
 	daily_max := raw_json.Get("daily", "0", "temp", "max").GetFloat64()
 	daily_low := raw_json.Get("daily", "0", "temp", "min").GetFloat64()
 	daily_humidity := raw_json.Get("daily", "0", "humidity").GetFloat64()
@@ -245,8 +268,6 @@ func main() {
 	ai_prompt.WriteString("Current humidity " + m["current_humidity"] + "%\n")
 	ai_prompt.WriteString("Current feels like: " + m["current_feels_like"] + "\u00B0F\n")
 
-	fmt.Println(ai_prompt.String())
-
 	// testing Google provided code
 
 	ctx := context.Background()
@@ -263,9 +284,12 @@ func main() {
 	client := getClient(config)
 
 	srv, err := gmail.NewService(ctx, option.WithHTTPClient(client))
+	if err != nil {
+		log.Fatalf("Unable to retrive Gmail client: %v", err)
+	}
 	calendar_srv, err := calendar.NewService(ctx, option.WithHTTPClient(client))
 	if err != nil {
-		log.Fatalf("Unable to retrieve Gmail client: %v", err)
+		log.Fatalf("Unable to retrieve Calendar client: %v", err)
 	}
 
 	// function call to get messages
@@ -280,25 +304,38 @@ func main() {
 	for _, e := range list_of_emails {
 		ai_prompt.WriteString(fmt.Sprintf("From: %s\nSubject: %s\nSnippet: %s\n\n", e.Sender, e.Subject, e.Snippet))
 	}
-
-	fmt.Println("Fetching calendar events...")
+	fmt.Println("Fetching calendar events for today...")
+	// We call our updated function that searches ALL calendars for TODAY only
 	list_of_events, err := GetCalendarEvents(calendar_srv)
-
 	if err != nil {
 		LogErr(err)
 	}
 
-	for _, e := range list_of_events {
-		ai_prompt.WriteString(fmt.Sprintf("Title: %s\nDate: %s\nTime: %s\nLocation: %s\n", e.Title, e.Date, e.Time, e.Location))
+	// Add the Calendar section to the AI Prompt
+	ai_prompt.WriteString("\n--- Today's Schedule ---\n")
+
+	if len(list_of_events) == 0 {
+		ai_prompt.WriteString("No events scheduled for today.\n")
+	} else {
+		for _, e := range list_of_events {
+			// Format: [Work] Team Meeting @ 2:00 PM
+			// or: [Holidays] Christmas @ All Day
+			ai_prompt.WriteString(fmt.Sprintf("%s @ %s", e.Title, e.Time))
+
+			// Only add location if it actually exists
+			if e.Location != "" {
+				ai_prompt.WriteString(fmt.Sprintf(" (Loc: %s)", e.Location))
+			}
+			ai_prompt.WriteString("\n")
+		}
 	}
 
+	// Final Print to see what we are sending to Ollama
+	fmt.Println("\n=== FINAL PROMPT TO SEND TO AI ===")
 	fmt.Println(ai_prompt.String())
+	fmt.Println("==================================")
 
-	//TODO: get credentials setup for google calendar api
-	// get all events from today and list times
-
-	// call calendar func
-
+	//TODO: format and send prompt to AI
 	// have ai figure out if i have anything important like exams or things other than school (based on response I feed it)
 
 	// FUTURE: setup NLP to process calendar changes on my phone
