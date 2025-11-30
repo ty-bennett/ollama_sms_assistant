@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -37,6 +38,16 @@ type CalendarEvent struct {
 	Date     string
 	Time     string
 	Location string
+}
+
+type OllamaPrompt struct {
+	Model  string `json:"model"`
+	Prompt string `json:"prompt"`
+	Stream bool   `json:"stream"`
+}
+
+type OllamaResponse struct {
+	Response string `json:"response"`
 }
 
 func LogErr(e error) {
@@ -208,6 +219,29 @@ func GetCalendarEvents(srv *calendar.Service) ([]CalendarEvent, error) {
 	return calendar_events_list, nil
 }
 
+func SendOllamaPrompt(promptData *OllamaPrompt) ([]byte, error) {
+	prompt, err := json.Marshal(promptData)
+	if err != nil {
+		LogErr(err)
+	}
+	resp, err := http.Post("http://localhost:11434/api/generate", "application/json", bytes.NewReader(prompt))
+	if err != nil {
+		log.Fatalf("error retrieving ollama response: %v", err)
+	}
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			log.Fatalf("error retrieving ollama response: %v", err)
+		}
+	}()
+
+	ai_response, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatalf("error reading ollama response: %v", err)
+	}
+	return ai_response, nil
+}
+
 func main() {
 
 	// load env variable for API key
@@ -259,6 +293,13 @@ func main() {
 
 	// string builder to build the prompt
 	var ai_prompt strings.Builder
+	err = godotenv.Load("prompt.txt")
+	if err != nil {
+		log.Fatal("prompt could not be loaded")
+	}
+	prompt_from_file := os.Getenv("prompt.txt")
+	ai_prompt.WriteString(prompt_from_file)
+
 	// building prompt
 	ai_prompt.WriteString("Here is the daily weather forecast for Columbia, SC:\n")
 	ai_prompt.WriteString("Daily summary: " + m["daily_summary"] + "\n")
@@ -337,6 +378,23 @@ func main() {
 
 	//TODO: format and send prompt to AI
 	// have ai figure out if i have anything important like exams or things other than school (based on response I feed it)
+	var req OllamaPrompt
+	ollama_model := "llama3.1"
+	req.Model = ollama_model
+	req.Prompt = ai_prompt.String()
+	req.Stream = false
+
+	res, err := SendOllamaPrompt(&req)
+	if err != nil {
+		log.Fatalf("Error retrieving response from Ollama: %v", err)
+	}
+	var final_answer OllamaResponse
+	err = json.Unmarshal(res, &final_answer)
+	if err != nil {
+		log.Fatalf("Error converting json values from ai response: %v", err)
+	}
+
+	fmt.Println(final_answer.Response)
 
 	// FUTURE: setup NLP to process calendar changes on my phone
 	// check gemini chats
