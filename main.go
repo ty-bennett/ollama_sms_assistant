@@ -50,6 +50,11 @@ type OllamaResponse struct {
 	Response string `json:"response"`
 }
 
+type OllamaVoicePrompt struct {
+	Prompt string `json:"prompt"`
+	Model  string `json:"model"`
+}
+
 func LogErr(e error) {
 	if e != nil {
 		log.Fatal(e)
@@ -372,8 +377,6 @@ func main() {
 	}
 
 	// Final Print to see what we are sending to Ollama
-	fmt.Println("\n=== FINAL PROMPT TO SEND TO AI ===")
-	fmt.Println(ai_prompt.String())
 	fmt.Println("==================================")
 
 	//TODO: format and send prompt to AI
@@ -397,6 +400,9 @@ func main() {
 	fmt.Println(final_answer.Response)
 
 	// FUTURE: setup NLP to process calendar changes on my phone
+	// might just have shortcuts handle that (still need an endpoint)
+	// endpoint setup against AWS infra
+	
 	// check gemini chats
 	// will have to do this using python for ease of use
 }
