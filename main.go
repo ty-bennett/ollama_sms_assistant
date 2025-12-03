@@ -23,6 +23,7 @@ import (
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sns/types"
 )
@@ -56,6 +57,10 @@ type OllamaResponse struct {
 type OllamaVoicePrompt struct {
 	Prompt string `json:"prompt"`
 	Model  string `json:"model"`
+}
+
+type SnsActions struct {
+	SnsClient *sns.Client
 }
 
 func LogErr(e error) {
@@ -248,6 +253,26 @@ func SendOllamaPrompt(promptData *OllamaPrompt) ([]byte, error) {
 		log.Fatalf("error reading ollama response: %v", err)
 	}
 	return ai_response, nil
+}
+
+func (actor SnsActions) Publish(ctx context.Context, topicArn string, message string, groupId string, dedupId string, filterKey string, filterValue string) error {
+	publishInput := sns.PublishInput{TopicArn: aws.String(topicArn), Message: aws.String(message)}
+	if groupId != "" {
+		publishInput.MessageGroupId = aws.String(groupId)
+	}
+	if dedupId != "" {
+		publishInput.MessageDeduplicationId = aws.String(dedupId)
+	}
+	if filterKey !+ "" && filterValue != "" {
+		publishInput.MessageAttributes = map[string]types.MessageAttributeValue {
+			filterKey: {DataType: aws.String("String")}, StringValue: aws.String(filterValue)
+		}
+	}
+	_, err := actor.SnsClient.Publish(ctx, &publishInput)
+	if err != nil {
+		log.Printf("Couldn't publish message to topic %v. Why: %v", topicArn, err)
+	}
+	return err
 }
 
 func main() {
