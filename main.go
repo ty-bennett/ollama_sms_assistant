@@ -22,6 +22,9 @@ import (
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
+
+	"github.com/aws/aws-sdk-go-v2/service/sns"
+	"github.com/aws/aws-sdk-go-v2/service/sns/types"
 )
 
 // email struct to easily read content later for ai prompt
@@ -399,10 +402,38 @@ func main() {
 
 	fmt.Println(final_answer.Response)
 
+	// send message using SNS
+	aws_ctx := context.Background()
+	sdkConfig, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		fmt.Println("Couldn't load default configuration. Have you set up your AWS account?")
+		fmt.Println(err)
+		return
+	}
+	snsClient := sns.NewFromConfig(sdkConfig)
+	fmt.Println("Let's list the topics for your account.")
+	var topics []types.Topic
+	paginator := sns.NewListTopicsPaginator(snsClient, &sns.ListTopicsInput{})
+	for paginator.HasMorePages() {
+		output, err := paginator.NextPage(aws_ctx)
+		if err != nil {
+			log.Printf("Couldn't get topic. Here's why: %v\n", err)
+		} else {
+			topics = append(topics, output.Topics...)
+		}
+	}
+	if len(topics) == 0 {
+		fmt.Println("no topics found to publish to")
+	} else {
+		for _, topic := range topics {
+			fmt.Printf("\t$v\n", *topic.TopicArn)
+		}
+	}
+
 	// FUTURE: setup NLP to process calendar changes on my phone
 	// might just have shortcuts handle that (still need an endpoint)
 	// endpoint setup against AWS infra
-	
+
 	// check gemini chats
 	// will have to do this using python for ease of use
 }
