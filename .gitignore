@@ -2,4 +2,6 @@
 *.mod
 weather_api_key
 *.json
+*.png
+twilio_*.txt
 

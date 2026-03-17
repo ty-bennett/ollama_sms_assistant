@@ -22,10 +22,6 @@ import (
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/sns"
-	"github.com/aws/aws-sdk-go-v2/service/sns/types"
 )
 
 // email struct to easily read content later for ai prompt
@@ -52,21 +48,6 @@ type OllamaPrompt struct {
 
 type OllamaResponse struct {
 	Response string `json:"response"`
-}
-
-type OllamaVoicePrompt struct {
-	Prompt string `json:"prompt"`
-	Model  string `json:"model"`
-}
-
-type SnsActions struct {
-	SnsClient *sns.Client
-}
-
-func LogErr(e error) {
-	if e != nil {
-		log.Fatal(e)
-	}
 }
 
 // Retrieve a token, saves the token, then returns the generated client.
@@ -199,7 +180,7 @@ func GetCalendarEvents(srv *calendar.Service) ([]CalendarEvent, error) {
 	for _, cal := range calendar_list.Items {
 
 		events, err := srv.Events.List(cal.Id).ShowDeleted(false).SingleEvents(true).TimeMin(startOfDay).TimeMax(endOfDay).OrderBy("startTime").Do()
-		if cal.Summary == "SCHOOL" {
+		if cal.Summary == "school schedule" {
 			continue
 		}
 		if err != nil {
@@ -255,25 +236,6 @@ func SendOllamaPrompt(promptData *OllamaPrompt) ([]byte, error) {
 	return ai_response, nil
 }
 
-func (actor SnsActions) Publish(ctx context.Context, topicArn string, message string, groupId string, dedupId string, filterKey string, filterValue string) error {
-	publishInput := sns.PublishInput{TopicArn: aws.String(topicArn), Message: aws.String(message)}
-	if groupId != "" {
-		publishInput.MessageGroupId = aws.String(groupId)
-	}
-	if dedupId != "" {
-		publishInput.MessageDeduplicationId = aws.String(dedupId)
-	}
-	if filterKey !+ "" && filterValue != "" {
-		publishInput.MessageAttributes = map[string]types.MessageAttributeValue {
-			filterKey: {DataType: aws.String("String")}, StringValue: aws.String(filterValue)
-		}
-	}
-	_, err := actor.SnsClient.Publish(ctx, &publishInput)
-	if err != nil {
-		log.Printf("Couldn't publish message to topic %v. Why: %v", topicArn, err)
-	}
-	return err
-}
 
 func main() {
 
@@ -293,13 +255,13 @@ func main() {
 
 	// Get request to API with correct Request Params sending those into response and err vars
 	response, err := http.Get(fmt.Sprintf("https://api.openweathermap.org/data/3.0/onecall?lat=%f&lon=%f&appid=%s&exclude=minutely,hourly,alerts&units=imperial&lang=en", latitude, longitude, weather_api_key))
-
-	// if that err is not nil then log error
 	LogErr(err)
+	// if that err is not nil then log error
 	//set body to read all response.Body
 	body, err := io.ReadAll(response.Body)
-
-	LogErr(err)
+	if(err != nil) {
+		log.Fatal(err);
+	}
 
 	var p fastjson.Parser
 
@@ -376,7 +338,7 @@ func main() {
 
 	ai_prompt.WriteString("\n--- Recent Emails ---\n")
 	for _, e := range list_of_emails {
-		ai_prompt.WriteString(fmt.Sprintf("From: %s\nSubject: %s\nSnippet: %s\n\n", e.Sender, e.Subject, e.Snippet))
+		fmt.Fprintf(&ai_prompt, "From: %s\nSubject: %s\nSnippet: %s\n\n", e.Sender, e.Subject, e.Snippet)
 	}
 	fmt.Println("Fetching calendar events for today...")
 	// We call our updated function that searches ALL calendars for TODAY only
@@ -392,20 +354,14 @@ func main() {
 		ai_prompt.WriteString("No events scheduled for today.\n")
 	} else {
 		for _, e := range list_of_events {
-			// Format: [Work] Team Meeting @ 2:00 PM
-			// or: [Holidays] Christmas @ All Day
-			ai_prompt.WriteString(fmt.Sprintf("%s @ %s", e.Title, e.Time))
-
+			fmt.Fprintf(&ai_prompt, "%s @ %s", e.Title, e.Time);
 			// Only add location if it actually exists
 			if e.Location != "" {
-				ai_prompt.WriteString(fmt.Sprintf(" (Loc: %s)", e.Location))
+				fmt.Fprintf(&ai_prompt, " (Loc: %s)", e.Location)
 			}
 			ai_prompt.WriteString("\n")
 		}
 	}
-
-	// Final Print to see what we are sending to Ollama
-	fmt.Println("==================================")
 
 	//TODO: format and send prompt to AI
 	// have ai figure out if i have anything important like exams or things other than school (based on response I feed it)
@@ -427,38 +383,4 @@ func main() {
 
 	fmt.Println(final_answer.Response)
 
-	// send message using SNS
-	aws_ctx := context.Background()
-	sdkConfig, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		fmt.Println("Couldn't load default configuration. Have you set up your AWS account?")
-		fmt.Println(err)
-		return
-	}
-	snsClient := sns.NewFromConfig(sdkConfig)
-	fmt.Println("Let's list the topics for your account.")
-	var topics []types.Topic
-	paginator := sns.NewListTopicsPaginator(snsClient, &sns.ListTopicsInput{})
-	for paginator.HasMorePages() {
-		output, err := paginator.NextPage(aws_ctx)
-		if err != nil {
-			log.Printf("Couldn't get topic. Here's why: %v\n", err)
-		} else {
-			topics = append(topics, output.Topics...)
-		}
-	}
-	if len(topics) == 0 {
-		fmt.Println("no topics found to publish to")
-	} else {
-		for _, topic := range topics {
-			fmt.Printf("\t$v\n", *topic.TopicArn)
-		}
-	}
-
-	// FUTURE: setup NLP to process calendar changes on my phone
-	// might just have shortcuts handle that (still need an endpoint)
-	// endpoint setup against AWS infra
-
-	// check gemini chats
-	// will have to do this using python for ease of use
 }
